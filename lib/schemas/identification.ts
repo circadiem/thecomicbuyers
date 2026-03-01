@@ -1,28 +1,55 @@
-// TODO: Task 2 — Implement IdentificationResult Zod schema
-// Source: Implementation Spec §III.B
+// Zod validation schema for IdentificationResult
+// Source: docs/prompts/prompt_identification.md (Implementation Spec §III.B)
+// Every Claude identification API response must be parsed through this schema
+// before entering the pipeline.
 
-export type IdentificationResult = {
-  title: string;
-  issue_number: string;
-  volume: number | null;
-  publisher: string;
-  cover_date: string;
-  cover_date_year: number;
-  era: string;
-  variant_type: string;
-  variant_detail: string | null;
-  cover_price: string | null;
-  significance: {
-    type: string | null;
-    description: string | null;
-  };
-  creators: {
-    cover_artist: string | null;
-    writer: string | null;
-    interior_artist: string | null;
-  };
-  confidence_score: number;
-  confidence_notes: string;
-  flagged_for_review: boolean;
-  photo_quality: string;
-};
+import { z } from 'zod';
+
+export const SignificanceSchema = z.object({
+  type: z
+    .enum([
+      'first_appearance',
+      'first_cameo',
+      'origin',
+      'death',
+      'first_issue',
+      'key_storyline',
+      'creator_debut',
+      'crossover',
+    ])
+    .nullable(),
+  description: z.string().nullable(),
+});
+
+export const CreatorsSchema = z.object({
+  cover_artist: z.string().nullable(),
+  writer: z.string().nullable(),
+  interior_artist: z.string().nullable(),
+});
+
+export const IdentificationResultSchema = z.object({
+  title: z.string().min(1),
+  issue_number: z.string().min(1),
+  volume: z.number().int().positive().nullable(),
+  publisher: z.string().min(1),
+  cover_date: z.string().min(1),
+  cover_date_year: z.number().int().min(1938),
+  era: z.enum(['Golden', 'Silver', 'Bronze', 'Copper', 'Modern']),
+  variant_type: z.enum([
+    'direct',
+    'newsstand',
+    'price_variant',
+    'mark_jewelers',
+    'unknown',
+  ]),
+  variant_detail: z.string().nullable(),
+  cover_price: z.string().nullable(),
+  significance: SignificanceSchema,
+  creators: CreatorsSchema,
+  confidence_score: z.number().min(0).max(100),
+  confidence_notes: z.string(),
+  flagged_for_review: z.boolean(),
+  photo_quality: z.enum(['good', 'acceptable', 'poor']),
+});
+
+export type IdentificationResult = z.infer<typeof IdentificationResultSchema>;
