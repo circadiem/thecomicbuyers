@@ -351,9 +351,11 @@ function ProgressBar({ comics }: { comics: ComicProcessingState[] }) {
 
 export interface ResultsFeedProps {
   comics: ComicProcessingState[];
+  /** When true, complete cards show adjusted_offer instead of base offer */
+  useAdjusted?: boolean;
 }
 
-export default function ResultsFeed({ comics }: ResultsFeedProps) {
+export default function ResultsFeed({ comics, useAdjusted = false }: ResultsFeedProps) {
   if (comics.length === 0) return null;
 
   const allDone = comics.every(
@@ -378,12 +380,15 @@ export default function ResultsFeed({ comics }: ResultsFeedProps) {
             case 'error':
               return <ErrorCard key={comic.id} comic={comic} />;
 
-            case 'complete':
+            case 'complete': {
+              const displayOffer = useAdjusted
+                ? (comic.adjusted_offer ?? comic.offer)
+                : comic.offer;
               if (
                 comic.identification &&
                 comic.condition &&
                 comic.valuation &&
-                comic.offer
+                displayOffer
               ) {
                 return (
                   <CompleteCard
@@ -392,11 +397,12 @@ export default function ResultsFeed({ comics }: ResultsFeedProps) {
                     identification={comic.identification}
                     condition={comic.condition}
                     valuation={comic.valuation}
-                    offer={comic.offer}
+                    offer={displayOffer}
                   />
                 );
               }
               return null;
+            }
 
             default:
               return null;

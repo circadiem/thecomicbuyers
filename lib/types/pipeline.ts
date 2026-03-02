@@ -1,6 +1,7 @@
-// Shared types for the comic processing pipeline (Task 5+)
+// Shared types for the comic processing pipeline (Tasks 5–7)
 // Each uploaded image flows through:
 //   pending → identifying → grading → valuating → complete | error
+// After questionnaire submission, adjusted_offer is populated.
 
 import type { IdentificationResult } from '@/lib/schemas/identification';
 import type { ConditionResult } from '@/lib/schemas/condition';
@@ -24,6 +25,9 @@ export interface ComicProcessingState {
   identification?: IdentificationResult;
   condition?: ConditionResult;
   valuation?: ValuationResult;
+  /** Base offer from pipeline (pre-questionnaire, unadjusted for storage) */
   offer?: OfferResult;
+  /** Recalculated offer after questionnaire grade adjustment is applied */
+  adjusted_offer?: OfferResult;
   error?: string;
 }
