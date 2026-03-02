@@ -1,7 +1,7 @@
 'use client';
 
-// Task 4/5 — Appraisal tool: upload phase → processing pipeline → results feed
-// Upload (Task 4) → Identify → Grade → Results (Task 5)
+// Tasks 4/5/6 — Appraisal tool: upload → identify → grade → valuate → offer
+// Pipeline runs concurrently per image; each card updates in real-time.
 
 import { useCallback, useState } from 'react';
 import UploadComponent from '@/components/upload';
@@ -10,42 +10,24 @@ import type { ProcessedImage } from '@/lib/types/upload';
 import type { ComicProcessingState } from '@/lib/types/pipeline';
 import type { IdentificationResult } from '@/lib/schemas/identification';
 import type { ConditionResult } from '@/lib/schemas/condition';
+import type { ValuationResult } from '@/lib/schemas/valuation';
+import type { OfferResult } from '@/lib/schemas/offer';
 
 // ---------------------------------------------------------------------------
-// Pipeline helpers
+// API call helpers
 // ---------------------------------------------------------------------------
 
-async function callIdentify(
-  imageBase64: string,
-  mimeType: string,
-): Promise<IdentificationResult> {
-  const res = await fetch('/api/identify', {
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64, mimeType }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error ?? `Identification failed (${res.status})`);
+    throw new Error(data.error ?? `Request to ${path} failed (${res.status})`);
   }
-  return res.json() as Promise<IdentificationResult>;
-}
-
-async function callGrade(
-  imageBase64: string,
-  mimeType: string,
-  identification: IdentificationResult,
-): Promise<ConditionResult> {
-  const res = await fetch('/api/grade', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64, mimeType, identification }),
-  });
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error ?? `Grading failed (${res.status})`);
-  }
-  return res.json() as Promise<ConditionResult>;
+  return res.json() as Promise<T>;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +45,6 @@ export default function AppraisePage() {
   const [readyImages, setReadyImages] = useState<ProcessedImage[]>([]);
   const [comics, setComics] = useState<ComicProcessingState[]>([]);
 
-  // Helper: update a single comic's state immutably
   const updateComic = useCallback(
     (id: string, patch: Partial<ComicProcessingState>) => {
       setComics((prev) =>
@@ -73,14 +54,17 @@ export default function AppraisePage() {
     [],
   );
 
-  // Process one image through identify → grade, updating state after each step
+  // Process one image through the full pipeline, updating state after each step
   const processOne = useCallback(
     async (img: ProcessedImage) => {
       // Step 1: Identify
       updateComic(img.id, { status: 'identifying' });
       let identification: IdentificationResult;
       try {
-        identification = await callIdentify(img.processedBase64, img.mimeType);
+        identification = await apiPost<IdentificationResult>('/api/identify', {
+          imageBase64: img.processedBase64,
+          mimeType: img.mimeType,
+        });
       } catch (err) {
         updateComic(img.id, {
           status: 'error',
@@ -88,12 +72,16 @@ export default function AppraisePage() {
         });
         return;
       }
-      updateComic(img.id, { status: 'grading', identification });
 
       // Step 2: Grade
+      updateComic(img.id, { status: 'grading', identification });
       let condition: ConditionResult;
       try {
-        condition = await callGrade(img.processedBase64, img.mimeType, identification);
+        condition = await apiPost<ConditionResult>('/api/grade', {
+          imageBase64: img.processedBase64,
+          mimeType: img.mimeType,
+          identification,
+        });
       } catch (err) {
         updateComic(img.id, {
           status: 'error',
@@ -101,7 +89,40 @@ export default function AppraisePage() {
         });
         return;
       }
-      updateComic(img.id, { status: 'complete', condition });
+
+      // Step 3: Valuate (GoCollect + hidden gem detection)
+      updateComic(img.id, { status: 'valuating', condition });
+      let valuation: ValuationResult;
+      try {
+        valuation = await apiPost<ValuationResult>('/api/valuate', {
+          identification,
+          condition,
+        });
+      } catch (err) {
+        updateComic(img.id, {
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Valuation failed',
+        });
+        return;
+      }
+
+      // Step 4: Calculate offer
+      let offer: OfferResult;
+      try {
+        offer = await apiPost<OfferResult>('/api/calculate-offer', {
+          fmv_low: valuation.fmv_low,
+          fmv_high: valuation.fmv_high,
+          fmv_midpoint: valuation.fmv_midpoint,
+        });
+      } catch (err) {
+        updateComic(img.id, {
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Offer calculation failed',
+        });
+        return;
+      }
+
+      updateComic(img.id, { status: 'complete', valuation, offer });
     },
     [updateComic],
   );
@@ -109,7 +130,6 @@ export default function AppraisePage() {
   function handleStartAppraisal() {
     if (readyImages.length === 0) return;
 
-    // Initialise comic state entries (all pending)
     const initial: ComicProcessingState[] = readyImages.map((img) => ({
       id: img.id,
       originalName: img.originalName,
@@ -119,7 +139,6 @@ export default function AppraisePage() {
     setComics(initial);
     setPhase('processing');
 
-    // Kick off all images concurrently — each updates independently
     Promise.all(readyImages.map((img) => processOne(img))).then(() => {
       setPhase('done');
     });
@@ -137,14 +156,13 @@ export default function AppraisePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
-      {/* Header */}
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
           Appraise Your Collection
         </h1>
         <p className="mt-3 text-base text-gray-600">
           Photograph each comic book cover — front cover only, one photo per book. Our AI will
-          identify and grade every issue instantly.
+          identify, grade, and value every issue instantly.
         </p>
       </div>
 
@@ -153,7 +171,6 @@ export default function AppraisePage() {
       {/* ------------------------------------------------------------------ */}
       {phase === 'upload' && (
         <>
-          {/* Minimum collection notice */}
           <div className="mb-6 rounded-md bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">
             <strong>Minimum collection size: 100 books.</strong> If you have fewer than 100
             comics, we&apos;re not the right fit — but we&apos;re happy to point you elsewhere.
@@ -161,7 +178,6 @@ export default function AppraisePage() {
 
           <UploadComponent onImagesReady={setReadyImages} />
 
-          {/* Action bar */}
           {readyImages.length > 0 && (
             <div className="mt-8 flex items-center justify-between rounded-lg bg-gray-50 px-6 py-4 ring-1 ring-gray-200">
               <p className="text-sm text-gray-700">
@@ -202,11 +218,11 @@ export default function AppraisePage() {
 
           <ResultsFeed comics={comics} />
 
-          {/* Placeholder CTA for Task 6+ (valuation + offer) */}
+          {/* Placeholder CTA — will become submission flow in Task 9 */}
           {phase === 'done' && (
             <div className="mt-8 rounded-lg bg-gray-50 px-6 py-5 ring-1 ring-gray-200 text-center">
               <p className="text-sm text-gray-600">
-                Valuation and cash offer calculation coming next.
+                Seller questionnaire and formal offer submission coming next.
               </p>
             </div>
           )}

@@ -1,15 +1,16 @@
 'use client';
 
-// Task 5 — Real-time identification and condition results feed
-// Receives ComicProcessingState[] from the appraise page and renders a card per comic.
+// Task 5/6 — Real-time identification, grading, and valuation results feed
 // Cards update in-place as each image moves through the pipeline.
 
 import type { ComicProcessingState } from '@/lib/types/pipeline';
 import type { IdentificationResult } from '@/lib/schemas/identification';
 import type { ConditionResult } from '@/lib/schemas/condition';
+import type { ValuationResult } from '@/lib/schemas/valuation';
+import type { OfferResult } from '@/lib/schemas/offer';
 
 // ---------------------------------------------------------------------------
-// Small display helpers
+// Display helpers
 // ---------------------------------------------------------------------------
 
 const ERA_COLORS: Record<IdentificationResult['era'], string> = {
@@ -33,6 +34,19 @@ const SIGNIFICANCE_LABELS: Record<
   creator_debut: 'Creator Debut',
   crossover: 'Crossover',
 };
+
+const TIER_COLORS: Record<OfferResult['tier'], string> = {
+  key_issues: 'bg-amber-100 text-amber-800',
+  mid_tier: 'bg-blue-100 text-blue-800',
+  common: 'bg-gray-100 text-gray-700',
+  bulk: 'bg-gray-100 text-gray-500',
+};
+
+function fmt(n: number): string {
+  return n < 1
+    ? `$${n.toFixed(2)}`
+    : `$${Math.round(n).toLocaleString()}`;
+}
 
 function ConfidenceBadge({ score, flagged }: { score: number; flagged: boolean }) {
   if (flagged || score < 70) {
@@ -63,8 +77,8 @@ function GradeDisplay({ condition }: { condition: ConditionResult }) {
   const { grade_low, grade_high, grade_label_low, grade_label_high, grade_limiting_factor } =
     condition;
   return (
-    <div className="mt-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Grade range</p>
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Grade</p>
       <p className="mt-0.5 text-sm font-semibold text-gray-900">
         {grade_label_low} – {grade_label_high}
         <span className="ml-1.5 font-normal text-gray-500">
@@ -72,13 +86,54 @@ function GradeDisplay({ condition }: { condition: ConditionResult }) {
         </span>
       </p>
       {grade_limiting_factor && (
-        <p
-          className="mt-0.5 truncate text-xs text-gray-500"
-          title={grade_limiting_factor}
-        >
+        <p className="mt-0.5 truncate text-xs text-gray-400" title={grade_limiting_factor}>
           Limiting: {grade_limiting_factor}
         </p>
       )}
+    </div>
+  );
+}
+
+function ValuationDisplay({
+  valuation,
+  offer,
+}: {
+  valuation: ValuationResult;
+  offer: OfferResult;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-4">
+      {/* FMV */}
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+          Est. Value
+          {!valuation.gocollect_match && (
+            <span className="ml-1 font-normal normal-case text-gray-400">(est.)</span>
+          )}
+        </p>
+        <p className="mt-0.5 text-sm font-semibold text-gray-900">
+          {fmt(valuation.fmv_low)} – {fmt(valuation.fmv_high)}
+        </p>
+      </div>
+
+      {/* Offer */}
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Our Offer</p>
+        <p className="mt-0.5 text-sm font-bold text-green-700">
+          {offer.is_bulk
+            ? `${fmt(offer.offer_low)} – ${fmt(offer.offer_high)} / book`
+            : `${fmt(offer.offer_low)} – ${fmt(offer.offer_high)}`}
+        </p>
+      </div>
+
+      {/* Tier badge */}
+      <div className="flex items-end">
+        <span
+          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TIER_COLORS[offer.tier]}`}
+        >
+          {offer.tier_label}
+        </span>
+      </div>
     </div>
   );
 }
@@ -93,25 +148,17 @@ function Spinner() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Per-status card variants
-// ---------------------------------------------------------------------------
-
-function Thumbnail({
-  src,
-  alt,
-  className,
-}: {
-  src: string;
-  alt: string;
-  className?: string;
-}) {
+function Thumbnail({ src, alt, className }: { src: string; alt: string; className?: string }) {
   if (!src) return <div className={`rounded bg-gray-100 ${className}`} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} className={`rounded object-cover ${className}`} />
   );
 }
+
+// ---------------------------------------------------------------------------
+// Per-status card variants
+// ---------------------------------------------------------------------------
 
 function PendingCard({ comic }: { comic: ComicProcessingState }) {
   return (
@@ -132,7 +179,10 @@ function PendingCard({ comic }: { comic: ComicProcessingState }) {
 
 function ProcessingCard({ comic }: { comic: ComicProcessingState }) {
   const { status, identification } = comic;
-  const label = status === 'identifying' ? 'Identifying…' : 'Grading…';
+  const label =
+    status === 'identifying' ? 'Identifying…' :
+    status === 'grading' ? 'Grading…' :
+    'Valuating…';
 
   return (
     <li className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
@@ -186,10 +236,14 @@ function CompleteCard({
   comic,
   identification,
   condition,
+  valuation,
+  offer,
 }: {
   comic: ComicProcessingState;
   identification: IdentificationResult;
   condition: ConditionResult;
+  valuation: ValuationResult;
+  offer: OfferResult;
 }) {
   const sigType = identification.significance.type;
 
@@ -234,6 +288,11 @@ function CompleteCard({
               {SIGNIFICANCE_LABELS[sigType]}
             </span>
           )}
+          {valuation.is_hidden_gem && (
+            <span className="inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+              Hidden Gem
+            </span>
+          )}
           <ConfidenceBadge
             score={identification.confidence_score}
             flagged={identification.flagged_for_review}
@@ -242,6 +301,16 @@ function CompleteCard({
 
         {/* Grade */}
         <GradeDisplay condition={condition} />
+
+        {/* FMV + Offer */}
+        <ValuationDisplay valuation={valuation} offer={offer} />
+
+        {/* Hidden gem explanation */}
+        {valuation.is_hidden_gem && valuation.hidden_gem_explanation && (
+          <p className="mt-1 text-xs text-emerald-700 italic leading-relaxed">
+            {valuation.hidden_gem_explanation}
+          </p>
+        )}
       </div>
     </li>
   );
@@ -303,19 +372,27 @@ export default function ResultsFeed({ comics }: ResultsFeedProps) {
 
             case 'identifying':
             case 'grading':
+            case 'valuating':
               return <ProcessingCard key={comic.id} comic={comic} />;
 
             case 'error':
               return <ErrorCard key={comic.id} comic={comic} />;
 
             case 'complete':
-              if (comic.identification && comic.condition) {
+              if (
+                comic.identification &&
+                comic.condition &&
+                comic.valuation &&
+                comic.offer
+              ) {
                 return (
                   <CompleteCard
                     key={comic.id}
                     comic={comic}
                     identification={comic.identification}
                     condition={comic.condition}
+                    valuation={comic.valuation}
+                    offer={comic.offer}
                   />
                 );
               }
