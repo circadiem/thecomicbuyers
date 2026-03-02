@@ -9,6 +9,7 @@ import { useCallback, useState } from 'react';
 import UploadComponent from '@/components/upload';
 import ResultsFeed from '@/components/results';
 import Questionnaire from '@/components/questionnaire';
+import AppraisalReport from '@/components/report';
 import type { ProcessedImage } from '@/lib/types/upload';
 import type { ComicProcessingState } from '@/lib/types/pipeline';
 import type { IdentificationResult } from '@/lib/schemas/identification';
@@ -16,6 +17,7 @@ import type { ConditionResult } from '@/lib/schemas/condition';
 import type { ValuationResult } from '@/lib/schemas/valuation';
 import type { OfferResult } from '@/lib/schemas/offer';
 import type { SellerQuestionnaire } from '@/lib/schemas/questionnaire';
+import type { CollectionSummary } from '@/lib/schemas/offer';
 import {
   computeGradeAdjustment,
   applyAdjustmentToOffer,
@@ -158,6 +160,14 @@ export default function AppraisePage() {
   const [comics, setComics] = useState<ComicProcessingState[]>([]);
   const [questionnaire, setQuestionnaire] = useState<SellerQuestionnaire | null>(null);
   const [adjustment, setAdjustment] = useState<GradeAdjustment | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportResult, setReportResult] = useState<{
+    reference_number: string;
+    generated_at: string;
+    summary: CollectionSummary;
+    pdf_base64: string;
+    csv: string;
+  } | null>(null);
 
   const updateComic = useCallback(
     (id: string, patch: Partial<ComicProcessingState>) => {
@@ -270,6 +280,63 @@ export default function AppraisePage() {
     setComics([]);
     setQuestionnaire(null);
     setAdjustment(null);
+    setReportResult(null);
+    setReportLoading(false);
+  }
+
+  async function handleGenerateReport() {
+    if (!questionnaire || !adjustment) return;
+    const books = comics
+      .filter(
+        (c) =>
+          c.status === 'complete' &&
+          c.identification &&
+          c.condition &&
+          c.valuation &&
+          c.offer &&
+          c.adjusted_offer,
+      )
+      .map((c) => ({
+        identification: c.identification!,
+        condition: c.condition!,
+        valuation: c.valuation!,
+        offer: c.offer!,
+        adjusted_offer: c.adjusted_offer!,
+      }));
+    if (books.length === 0) return;
+    setReportLoading(true);
+    try {
+      const result = await apiPost<{
+        reference_number: string;
+        generated_at: string;
+        summary: CollectionSummary;
+        pdf_base64: string;
+        csv: string;
+      }>('/api/generate-report', { seller: questionnaire, adjustment, books });
+      setReportResult(result);
+    } catch (err) {
+      console.error('Report generation failed:', err);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  function downloadFile(data: string, filename: string, mimeType: string) {
+    let blob: Blob;
+    if (mimeType === 'application/pdf') {
+      const bytes = atob(data);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      blob = new Blob([arr], { type: mimeType });
+    } else {
+      blob = new Blob([data], { type: mimeType });
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ---------------------------------------------------------------------------
@@ -402,6 +469,87 @@ export default function AppraisePage() {
               <p className="mb-3 text-sm font-medium text-gray-700">Per-book breakdown</p>
               <ResultsFeed comics={comics} useAdjusted />
             </div>
+          </div>
+
+          {/* Report generation */}
+          <div className="mt-6">
+            {!reportResult ? (
+              <button
+                type="button"
+                onClick={handleGenerateReport}
+                disabled={reportLoading}
+                className="w-full rounded-md bg-gray-800 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-gray-900 disabled:cursor-wait disabled:opacity-60"
+              >
+                {reportLoading ? 'Generating report…' : 'Generate Appraisal Report'}
+              </button>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Report reference</p>
+                    <p className="font-mono text-sm font-semibold text-gray-900">
+                      {reportResult.reference_number}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadFile(
+                          reportResult.pdf_base64,
+                          `${reportResult.reference_number}.pdf`,
+                          'application/pdf',
+                        )
+                      }
+                      className="rounded-md bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadFile(
+                          reportResult.csv,
+                          `${reportResult.reference_number}.csv`,
+                          'text/csv',
+                        )
+                      }
+                      className="rounded-md bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                    >
+                      Download CSV
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-6">
+                  <AppraisalReport
+                    data={{
+                      reference_number: reportResult.reference_number,
+                      generated_at: reportResult.generated_at,
+                      seller: questionnaire,
+                      adjustment,
+                      summary: reportResult.summary,
+                      books: comics
+                        .filter(
+                          (c) =>
+                            c.status === 'complete' &&
+                            c.identification &&
+                            c.condition &&
+                            c.valuation &&
+                            c.offer &&
+                            c.adjusted_offer,
+                        )
+                        .map((c) => ({
+                          identification: c.identification!,
+                          condition: c.condition!,
+                          valuation: c.valuation!,
+                          offer: c.offer!,
+                          adjusted_offer: c.adjusted_offer!,
+                        })),
+                    }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </>
       )}
