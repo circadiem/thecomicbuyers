@@ -54,7 +54,7 @@ function fmt(n: number): string {
 // Phase type
 // ---------------------------------------------------------------------------
 
-type Phase = 'upload' | 'processing' | 'done' | 'questionnaire' | 'offer';
+type Phase = 'upload' | 'processing' | 'done' | 'questionnaire' | 'offer' | 'submitted';
 
 // ---------------------------------------------------------------------------
 // Adjusted offer summary component
@@ -64,10 +64,14 @@ function AdjustedOfferSummary({
   comics,
   questionnaire,
   adjustment,
+  onFormalSubmit,
+  submitState,
 }: {
   comics: ComicProcessingState[];
   questionnaire: SellerQuestionnaire;
   adjustment: GradeAdjustment;
+  onFormalSubmit: () => void;
+  submitState: 'idle' | 'submitting' | 'error';
 }) {
   const completed = comics.filter(
     (c) => c.status === 'complete' && c.adjusted_offer,
@@ -134,17 +138,22 @@ function AdjustedOfferSummary({
         </p>
       </div>
 
-      {/* Submit CTA — Task 9 */}
+      {/* Submit CTA */}
       <button
         type="button"
-        disabled
-        title="Submission flow coming in Task 9"
-        className="w-full cursor-not-allowed rounded-md bg-green-600 px-5 py-3 text-sm font-semibold text-white opacity-50 shadow-sm"
+        onClick={onFormalSubmit}
+        disabled={submitState === 'submitting'}
+        className="w-full rounded-md bg-green-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:cursor-wait disabled:opacity-60"
       >
-        Submit for Formal Offer →
+        {submitState === 'submitting' ? 'Submitting…' : 'Submit for Formal Offer →'}
       </button>
+      {submitState === 'error' && (
+        <p className="text-center text-xs text-red-600">
+          Submission failed — please try again or contact us directly.
+        </p>
+      )}
       <p className="text-center text-xs text-gray-400">
-        Offer valid for {OFFER_VALIDITY_DAYS} days from submission date
+        Offer valid for {OFFER_VALIDITY_DAYS} days · Confirmation emailed to {questionnaire.email}
       </p>
     </div>
   );
@@ -160,6 +169,8 @@ export default function AppraisePage() {
   const [comics, setComics] = useState<ComicProcessingState[]>([]);
   const [questionnaire, setQuestionnaire] = useState<SellerQuestionnaire | null>(null);
   const [adjustment, setAdjustment] = useState<GradeAdjustment | null>(null);
+  const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'error'>('idle');
+  const [submissionRef, setSubmissionRef] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportResult, setReportResult] = useState<{
     reference_number: string;
@@ -282,6 +293,43 @@ export default function AppraisePage() {
     setAdjustment(null);
     setReportResult(null);
     setReportLoading(false);
+    setSubmitState('idle');
+    setSubmissionRef(null);
+  }
+
+  async function handleFormalSubmit() {
+    if (!questionnaire || !adjustment) return;
+    const books = comics
+      .filter(
+        (c) =>
+          c.status === 'complete' &&
+          c.identification &&
+          c.condition &&
+          c.valuation &&
+          c.offer &&
+          c.adjusted_offer,
+      )
+      .map((c) => ({
+        identification: c.identification!,
+        condition: c.condition!,
+        valuation: c.valuation!,
+        offer: c.offer!,
+        adjusted_offer: c.adjusted_offer!,
+      }));
+    if (books.length === 0) return;
+    setSubmitState('submitting');
+    try {
+      const result = await apiPost<{ reference_number: string; submitted_at: string }>(
+        '/api/submit',
+        { seller: questionnaire, adjustment, books },
+      );
+      setSubmissionRef(result.reference_number);
+      setPhase('submitted');
+      setSubmitState('idle');
+    } catch (err) {
+      console.error('Formal submission failed:', err);
+      setSubmitState('error');
+    }
   }
 
   async function handleGenerateReport() {
@@ -463,6 +511,8 @@ export default function AppraisePage() {
                 comics={comics}
                 questionnaire={questionnaire}
                 adjustment={adjustment}
+                onFormalSubmit={handleFormalSubmit}
+                submitState={submitState}
               />
             </div>
             <div className="md:col-span-3">
@@ -552,6 +602,68 @@ export default function AppraisePage() {
             )}
           </div>
         </>
+      )}
+      {/* SUBMITTED */}
+      {phase === 'submitted' && submissionRef && (
+        <div className="mx-auto max-w-lg text-center">
+          {/* Checkmark */}
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+            <svg
+              className="h-8 w-8 text-green-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+
+          <h2 className="mb-2 text-2xl font-bold text-gray-900">Submission Confirmed</h2>
+          <p className="mb-6 text-sm text-gray-600">
+            A confirmation has been emailed to{' '}
+            <span className="font-medium text-gray-800">{questionnaire?.email}</span>.
+          </p>
+
+          {/* Reference number */}
+          <div className="mb-8 rounded-lg border border-gray-200 bg-gray-50 px-6 py-4">
+            <p className="mb-1 text-xs text-gray-500">Your reference number</p>
+            <p className="font-mono text-xl font-bold text-gray-900">{submissionRef}</p>
+            <p className="mt-1 text-xs text-gray-400">
+              Keep this for your records. Offer valid for {OFFER_VALIDITY_DAYS} days.
+            </p>
+          </div>
+
+          {/* Next steps */}
+          <div className="mb-8 rounded-lg bg-blue-50 px-6 py-5 text-left ring-1 ring-blue-100">
+            <h3 className="mb-4 text-sm font-semibold text-blue-900">What happens next</h3>
+            <ol className="space-y-3">
+              {[
+                ['Review', 'Our team reviews your appraisal within 1–2 business days.'],
+                ['Schedule', 'We contact you to arrange a convenient pickup time.'],
+                ['Payment', 'We pay same-day when we collect the books.'],
+              ].map(([title, body], i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+                    {i + 1}
+                  </span>
+                  <span className="text-sm text-blue-800">
+                    <span className="font-semibold">{title}: </span>
+                    {body}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleStartOver}
+            className="text-sm font-medium text-gray-500 hover:text-gray-700"
+          >
+            ← Appraise another collection
+          </button>
+        </div>
       )}
     </main>
   );
