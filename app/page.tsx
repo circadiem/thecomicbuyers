@@ -49,7 +49,7 @@ const COMPARISONS = [
 const FAQ: { q: string; a: string }[] = [
   {
     q: 'What is the minimum collection size?',
-    a: 'We require at least 100 comic books. Our model is built around purchasing full collections, not individual books.',
+    a: 'We purchase full collections of any size. Whether you have a dozen books or several thousand, we can make you an offer.',
   },
   {
     q: 'How accurate is the AI appraisal?',

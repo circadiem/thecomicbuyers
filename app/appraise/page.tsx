@@ -406,11 +406,6 @@ export default function AppraisePage() {
       {/* UPLOAD */}
       {phase === 'upload' && (
         <>
-          <div className="mb-6 rounded-md bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">
-            <strong>Minimum collection size: 100 books.</strong> If you have fewer than
-            100 comics, we&apos;re not the right fit — but we&apos;re happy to point you
-            elsewhere.
-          </div>
           <UploadComponent onImagesReady={setReadyImages} />
           {readyImages.length > 0 && (
             <div className="mt-8 flex items-center justify-between rounded-lg bg-gray-50 px-6 py-4 ring-1 ring-gray-200">

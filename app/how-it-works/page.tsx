@@ -18,7 +18,7 @@ const STEPS = [
       'Any smartphone camera is fine. JPEG or PNG accepted.',
       'You can upload up to 500 images in a single session.',
     ],
-    note: "Our minimum collection size is 100 books. If you have fewer, we're happy to point you toward other resources.",
+    note: 'Natural light and a clean background will give the AI the best chance of an accurate identification.',
   },
   {
     num: '02',
