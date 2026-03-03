@@ -23,7 +23,7 @@ export const SellerQuestionnaireSchema = z.object({
   estimated_count: z
     .number({ invalid_type_error: 'Enter an estimated book count' })
     .int()
-    .min(100, 'Minimum collection size is 100 books'),
+    .min(1, 'Enter at least 1 book'),
   storage_type: z.enum(['bagged_boarded', 'bagged_only', 'loose', 'mixed'], {
     errorMap: () => ({ message: 'Select a storage type' }),
   }),

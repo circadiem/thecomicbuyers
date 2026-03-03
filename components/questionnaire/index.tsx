@@ -202,8 +202,8 @@ function validateStep1(d: Draft): FieldErrors {
   const count = parseInt(d.estimated_count, 10);
   if (!d.estimated_count || isNaN(count)) {
     errors.estimated_count = 'Enter an estimated number of books';
-  } else if (count < 100) {
-    errors.estimated_count = 'Minimum collection size is 100 books';
+  } else if (count < 1) {
+    errors.estimated_count = 'Enter at least 1 book';
   }
   if (!d.storage_type) errors.storage_type = 'Select how your books are stored';
   if (!d.storage_location) errors.storage_location = 'Select the storage environment';
@@ -249,7 +249,7 @@ function Step1({
         <input
           id="estimated_count"
           type="number"
-          min={100}
+          min={1}
           value={draft.estimated_count}
           onChange={(e) => onChange({ estimated_count: e.target.value })}
           placeholder="e.g. 500"
