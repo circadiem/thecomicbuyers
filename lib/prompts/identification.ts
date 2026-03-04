@@ -52,11 +52,37 @@ Return a confidence_score from 0-100 based on:
 
 CONSERVATIVE BIAS: When uncertain between two possible identifications, choose the more common/likely option and reduce the confidence score rather than guessing at the rarer identification. It is better to be right about a common book than wrong about a rare one.
 
-RESPONSE FORMAT: Return ONLY valid JSON matching the schema below. No preamble, no markdown, no explanation outside the JSON structure.`;
+RESPONSE FORMAT: Return ONLY valid JSON. No preamble, no markdown fences, no explanation — just the raw JSON object. Use these exact field names and enum values:
+
+{
+  "title": "<series title>",
+  "issue_number": "<issue number as string, e.g. \"23\" or \"1A\">",
+  "volume": <integer, or null>,
+  "publisher": "<publisher name>",
+  "cover_date": "<cover date as printed, e.g. \"May 1975\">",
+  "cover_date_year": <four-digit integer, e.g. 1975>,
+  "era": "<one of: Golden | Silver | Bronze | Copper | Modern>",
+  "variant_type": "<one of: direct | newsstand | price_variant | mark_jewelers | unknown>",
+  "variant_detail": "<string, or null>",
+  "cover_price": "<price as printed e.g. \"25¢\", or null>",
+  "significance": {
+    "type": "<one of: first_appearance | first_cameo | origin | death | first_issue | key_storyline | creator_debut | crossover — or null>",
+    "description": "<string, or null>"
+  },
+  "creators": {
+    "cover_artist": "<string, or null>",
+    "writer": "<string, or null>",
+    "interior_artist": "<string, or null>"
+  },
+  "confidence_score": <integer 0-100>,
+  "confidence_notes": "<brief explanation>",
+  "flagged_for_review": <true or false>,
+  "photo_quality": "<one of: good | acceptable | poor>"
+}`;
 
 export const IDENTIFICATION_USER_MESSAGE =
   'Identify this comic book cover. Return only JSON.';
 
 // API call configuration — imported by lib/services/claude.ts
-export const IDENTIFICATION_MAX_TOKENS = 1024;
+export const IDENTIFICATION_MAX_TOKENS = 1500;
 export const IDENTIFICATION_TEMPERATURE = 0;
