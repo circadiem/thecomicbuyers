@@ -72,7 +72,44 @@ You CANNOT assess from a cover photo alone:
 
 Because of these limitations, your grade range should span at least 1.0 full grade points (e.g., 6.0-7.0, not 6.5-7.0) unless the book is clearly in exceptional or very poor condition.
 
-RESPONSE FORMAT: Return ONLY valid JSON matching the schema. No preamble, no markdown, no explanation outside JSON.`;
+RESPONSE FORMAT: Return ONLY valid JSON. No preamble, no markdown fences, no explanation — just the raw JSON object. Use these exact field names and enum values:
+
+{
+  "grade_low": <number 0.5-10.0>,
+  "grade_high": <number 0.5-10.0>,
+  "grade_midpoint": <number 0.5-10.0>,
+  "grade_label_low": "<e.g. Very Good>",
+  "grade_label_high": "<e.g. Fine>",
+  "primary_defects": [
+    {
+      "type": "<one of: spine_stress | corner_blunt | tear | stain | foxing | writing | chip | crease | color_loss | staple_rust | fading>",
+      "severity": "<one of: minor | moderate | significant>",
+      "location": "<string describing location on cover>",
+      "color_breaking": <true or false>,
+      "description": "<string>"
+    }
+  ],
+  "cover_assessment": {
+    "gloss": "<one of: high | moderate | low | absent>",
+    "color_integrity": "<one of: excellent | good | fair | poor>",
+    "notes": "<string>"
+  },
+  "spine_assessment": {
+    "stress_lines": <integer 0 or more>,
+    "roll": "<one of: none | slight | moderate | significant>",
+    "splits": <true or false>,
+    "notes": "<string>"
+  },
+  "corner_assessment": {
+    "sharpness": "<one of: sharp | slightly_blunted | blunted | rounded>",
+    "weakest_corner": "<one of: top_left | top_right | bottom_left | bottom_right>",
+    "notes": "<string>"
+  },
+  "limitations_noted": ["<string>"],
+  "storage_inference": "<string>",
+  "pressing_potential": "<one of: none | minor_improvement | significant>",
+  "grade_limiting_factor": "<string>"
+}`;
 
 export function buildConditionUserMessage(
   title: string,
