@@ -1,7 +1,7 @@
 // App-wide constants
 
 // Claude model — never change without updating all API call sites
-export const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
+export const CLAUDE_MODEL = 'claude-sonnet-4-6';
 
 // Minimum collection size — enforced at qualification step
 export const MIN_COLLECTION_SIZE = 100;

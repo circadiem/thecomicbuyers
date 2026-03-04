@@ -9,11 +9,7 @@ import type { ConditionResult } from '@/lib/schemas/condition';
 import { ValuationResultSchema, type ValuationResult } from '@/lib/schemas/valuation';
 import { OBVIOUS_KEYS } from '@/lib/config/obvious-keys';
 import { generateHiddenGemExplanation } from '@/lib/services/claude';
-import {
-  MAX_RETRIES,
-  BASE_RETRY_DELAY_MS,
-  HIDDEN_GEM_FMV_THRESHOLD,
-} from '@/lib/config/constants';
+import { HIDDEN_GEM_FMV_THRESHOLD } from '@/lib/config/constants';
 
 // ---------------------------------------------------------------------------
 // GoCollect API response schema
@@ -134,12 +130,11 @@ function interpolateFmv(
 }
 
 // ---------------------------------------------------------------------------
-// GoCollect HTTP client (retry + exponential backoff)
+// GoCollect HTTP client (single attempt, short timeout)
+// GoCollect is a non-critical enhancement — interpolation fallback exists.
+// A single 3 s attempt keeps the /api/valuate function well within any
+// Vercel plan's function-duration limit even when GoCollect is unavailable.
 // ---------------------------------------------------------------------------
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function fetchGoCollectFmv(
   title: string,
@@ -162,29 +157,21 @@ async function fetchGoCollectFmv(
     ...(volume != null ? { volume: String(volume) } : {}),
   });
 
-  let lastErr: unknown;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(`${baseUrl}/v1/books/fmv?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(10_000),
-      });
+  try {
+    const res = await fetch(`${baseUrl}/v1/books/fmv?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(3_000),
+    });
 
-      if (res.status === 404) return { found: false };
-      if (!res.ok) throw new Error(`GoCollect API returned ${res.status}`);
+    if (res.status === 404) return { found: false };
+    if (!res.ok) throw new Error(`GoCollect API returned ${res.status}`);
 
-      const raw: unknown = await res.json();
-      const parsed = GoCollectResponseSchema.safeParse(raw);
-      return parsed.success ? parsed.data : { found: false };
-    } catch (err) {
-      lastErr = err;
-      if (attempt < MAX_RETRIES) {
-        await sleep(BASE_RETRY_DELAY_MS * Math.pow(2, attempt));
-      }
-    }
+    const raw: unknown = await res.json();
+    const parsed = GoCollectResponseSchema.safeParse(raw);
+    return parsed.success ? parsed.data : { found: false };
+  } catch (err) {
+    console.warn('[gocollect] API unavailable, using interpolation fallback:', err);
   }
-
-  console.warn('[gocollect] API unavailable after retries:', lastErr);
   return null;
 }
 
